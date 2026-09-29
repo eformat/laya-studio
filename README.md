@@ -6,6 +6,8 @@ A [Decision Studio](https://huggingface.co/spaces/llm-semantic-router/decision-s
 
 The question schema is laya's own — `choice` / `score` / `noul` — which is wire-compatible with the Decision Studio's example format, so the studio's curated scenarios port unchanged.
 
+![images/laya-studio.png](images/laya-studio.png)
+
 ## Run it
 
 ```bash
