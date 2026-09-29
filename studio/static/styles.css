@@ -74,6 +74,8 @@ body {
   background: none; border: none; cursor: pointer; font-family: inherit; padding: 0;
 }
 .top-actions a:hover, .text-button:hover { color: var(--ink); }
+.top-actions .github-link { display: flex; align-items: center; }
+.top-actions .github-link .github-icon { display: block; fill: currentColor; }
 .text-button.active { color: var(--accent-ink); }
 
 /* -------------------------------- hero -------------------------------- */
