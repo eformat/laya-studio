@@ -1,0 +1,6 @@
+apiVersion: v2
+name: laya-decision-studio
+description: Laya Decision Studio — a Decision-Studio-style workbench for laya's Router
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

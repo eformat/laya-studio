@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "laya-decision-studio.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "laya-decision-studio.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.studio.replicas }}
+  selector:
+    matchLabels:
+      {{- include "laya-decision-studio.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "laya-decision-studio.labels" . | nindent 8 }}
+        {{- if .Values.studio.gpu.enabled }}
+        {{- with .Values.studio.gpu.labels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      {{- if .Values.studio.gpu.enabled }}
+      annotations:
+        {{- with .Values.studio.gpu.annotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ template "laya-decision-studio.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.studio.podSecurityContext | nindent 8 }}
+      {{- with .Values.studio.gpu.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- $tolerations := .Values.studio.gpu.tolerations | default list }}
+      {{- if .Values.studio.gpu.enabled }}
+      {{- $tolerations = concat (.Values.studio.gpu.defaultTolerations | default list) $tolerations }}
+      {{- end }}
+      {{- with $tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ template "laya-decision-studio.name" . }}
+          image: {{ required "Studio image must be specified! Build and push it with `make image` / `make push`." .Values.studio.image }}
+          imagePullPolicy: {{ .Values.studio.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.studio.port }}
+              protocol: TCP
+          securityContext:
+            {{- toYaml .Values.studio.containerSecurityContext | nindent 12 }}
+          env:
+            {{- include "laya-decision-studio.env" . | nindent 12 }}
+          resources:
+            {{- $resources := deepCopy (.Values.studio.resources | default dict) }}
+            {{- if .Values.studio.gpu.enabled }}
+            {{- $limits := deepCopy ($resources.limits | default dict) }}
+            {{- $_ := set $limits .Values.studio.gpu.resourceName .Values.studio.gpu.count }}
+            {{- $_ := set $resources "limits" $limits }}
+            {{- $requests := deepCopy ($resources.requests | default dict) }}
+            {{- $_ := set $requests .Values.studio.gpu.resourceName .Values.studio.gpu.count }}
+            {{- $_ := set $resources "requests" $requests }}
+            {{- end }}
+            {{- toYaml $resources | nindent 12 }}
+          # /api/ready answers 503 until every configured checkpoint is
+          # resident; the baked weights make that quick, but a cold node
+          # still takes some seconds to page 2-3 GiB into RAM.
+          startupProbe:
+            httpGet:
+              path: /api/ready
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 2

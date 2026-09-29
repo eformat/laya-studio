@@ -1,0 +1,10 @@
+.DS_Store
+.idea/
+*.tmproj
+.vscode/
+*.swp
+*.bak
+*.orig
+charts/
+Chart.lock
+*.tgz

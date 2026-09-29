@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="theme-color" content="#f6f8fc">
+<title>Laya Decision Studio — Decide at a glance.</title>
+<link rel="icon" href="/assets/laya-mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="atmosphere" aria-hidden="true"></div>
+<a class="skip-link" href="#workbench">Skip to decision workbench</a>
+<div class="app-shell">
+<header class="topbar">
+ <a class="brand" href="/" aria-label="Laya Decision Studio home"><img src="/assets/laya-mark.svg" alt="" width="40" height="40"><span>Laya<span class="brand-dot">.</span></span><small>DECISION STUDIO</small></a>
+ <nav class="top-actions" aria-label="Main navigation">
+  <button class="text-button active" id="playground-nav">Playground</button>
+  <a href="https://github.com/NandhaKishorM/laya" target="_blank" rel="noopener">Laya ↗</a>
+  <a href="/api/docs" target="_blank" rel="noopener">API ↗</a>
+ </nav>
+</header>
+<main>
+<section class="intro">
+ <div class="hero-copy">
+  <div class="eyebrow"><span class="star">✦</span> SYSTEM 1 DECISION ENGINE</div>
+  <h1>Decide at a <em>glance.</em></h1>
+  <p>One forward pass. Every probability. No generation, nothing to parse, nothing to hallucinate.</p>
+  <div class="hero-primitives" aria-label="Three decision types">
+   <span><b>C</b> Choose</span><i></i><span><b>N</b> Verify</span><i></i><span><b>S</b> Measure</span>
+  </div>
+ </div>
+ <div class="hero-art" aria-hidden="true"><span class="hero-speech">Typed decisions,<br>100+ languages! ✦</span><img src="/assets/laya-mark.svg" alt="" width="200" height="200"></div>
+ <span class="connection" id="connection"><i></i> Checking connection</span>
+</section>
+<div class="context-modebar">
+ <div class="context-mode-tabs" role="group" aria-label="Context mode">
+  <button id="context-mode-routing" aria-pressed="true">LLM routing</button>
+  <button id="context-mode-single" aria-pressed="false">One context</button>
+  <button id="context-mode-batch" aria-pressed="false">Batch contexts</button>
+ </div>
+ <span id="mode-description">Route each prompt to the right LLM before calling it.</span>
+</div>
+<section class="scenario-bar" aria-label="Example scenarios">
+ <span class="scenario-label" id="scenario-summary">1 prompt · 6 routing decisions</span>
+ <div id="examples" class="example-list"></div>
+</section>
+<div class="workspace-head">
+ <span class="workbench-index" aria-hidden="true">I.</span>
+ <div><span class="eyebrow" id="scenario-category">FAST PATH</span><h2 id="scenario-title">Quick arithmetic</h2></div>
+ <div class="workspace-actions">
+  <button class="subtle-button" id="reset">↺ Reset</button>
+  <button class="run-button run-top" id="run-top" disabled>Run decisions ↗</button>
+ </div>
+</div>
+<div class="offline-note" id="offline-note" hidden>
+ <span class="offline-symbol">○</span>
+ <div><b>The canvas is yours.</b> The checkpoints are still loading. Explore the examples and editors; real predictions appear when the model is ready.</div>
+</div>
+<div class="workbench" id="workbench">
+<section class="editor-pane" aria-label="Decision inputs">
+ <div class="panel-title">
+  <span class="section-num">01</span>
+  <h3 id="context-heading">User prompt</h3>
+  <span id="context-count" class="count-pill" hidden>1</span>
+  <div id="single-format" class="segmented"><button id="mode-text" class="selected">Text</button><button id="mode-json">JSON</button></div>
+  <div id="batch-format" class="segmented" hidden><button id="batch-view-list" class="selected" aria-pressed="true">List</button><button id="batch-view-json" aria-pressed="false">JSON</button></div>
+ </div>
+ <div class="editor-scroll" tabindex="0" role="region" aria-label="Context and question editor">
+  <div id="single-context-editor">
+   <label class="sr-only" for="state-input">Context to evaluate</label>
+   <textarea id="state-input" class="state-input" spellcheck="false"></textarea>
+   <div class="field-foot"><span id="state-count"></span><span>Shared across questions</span></div>
+  </div>
+  <div id="batch-context-editor" hidden>
+   <div id="batch-list-view">
+    <div id="context-list" class="context-list"></div>
+    <div class="context-list-foot"><span id="context-limit">Batched forward passes · Complete inputs</span><button id="add-context" class="subtle-button">＋ Add context</button></div>
+   </div>
+   <div id="batch-json-view" hidden>
+    <label for="states-json" class="batch-json-label">Paste an array of { id, state } contexts.</label>
+    <textarea id="states-json" spellcheck="false" aria-describedby="batch-json-error"></textarea>
+    <p id="batch-json-error" role="status" class="batch-json-error" hidden></p>
+    <p class="bulk-note">Valid edits update the list immediately. Shared questions stay unchanged.</p>
+   </div>
+  </div>
+  <div class="questions-title">
+   <div class="panel-title">
+    <button class="questions-collapse" id="shared-toggle" aria-expanded="true" aria-controls="shared-questions"><span class="chevron">⌄</span><h3 id="questions-heading">Routing decisions</h3></button>
+    <span class="count-pill" id="question-count">6</span>
+   </div>
+   <div class="add-menu">
+    <button class="subtle-button" id="add-toggle" aria-expanded="false">＋ Add question</button>
+    <div id="add-options" hidden>
+     <button data-add="choice"><b>C</b> <span>Choice<small>Pick from your options</small></span></button>
+     <button data-add="noul"><b>N</b> <span>Noul<small>Ask a yes / no question</small></span></button>
+     <button data-add="score"><b>S</b> <span>Score<small>Define an ordered scale</small></span></button>
+    </div>
+   </div>
+  </div>
+  <div id="shared-questions">
+   <p id="shared-note" class="shared-note" hidden>The same questions are applied to every context.</p>
+   <div id="questions" class="question-list"></div>
+  </div>
+ </div>
+ <div class="run-bar">
+  <label class="auto-label"><input id="auto-run" type="checkbox"><span class="switch"></span> Auto-run <span class="tooltip" title="Sends edits to the model after you pause.">ⓘ</span></label>
+  <button id="run" class="run-button" disabled><span id="run-label">Run decisions</span><span class="run-glyph">↗</span><kbd id="run-shortcut">Ctrl ↵</kbd></button>
+ </div>
+ <div class="editor-note" id="input-budget">Complete input per question. Nothing is truncated.</div>
+</section>
+<section class="model-lane" aria-label="Decision model activity">
+ <div class="model-card" id="model-card" data-state="checking" aria-busy="true">
+  <div class="model-kicker">THE DECISION ENGINE</div>
+  <div class="dice-scene" aria-hidden="true">
+   <div class="orbit orbit-outer"></div><div class="orbit orbit-inner"></div><span class="orbit-star">✧</span>
+   <div class="dice-shadow"></div>
+   <div class="dice-toss"><div class="dice">
+    <span class="dice-face face-front"><img src="/assets/laya-mark.svg" alt=""></span>
+    <span class="dice-face face-back">◇</span>
+    <span class="dice-face face-right">C</span>
+    <span class="dice-face face-left">N</span>
+    <span class="dice-face face-top">S</span>
+    <span class="dice-face face-bottom">D</span>
+   </div></div>
+  </div>
+  <div class="model-body">
+   <button class="model-trigger" id="model-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="model-options" aria-label="Choose a decision model" disabled>
+    <span class="model-name-line"><span id="model-name">Laya</span><svg class="model-chevron" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></span>
+    <span id="model-version" class="model-version"></span><span class="model-switch-hint">Switch model</span>
+   </button>
+   <div class="model-spec" id="model-spec"></div>
+   <div id="model-state" class="model-state" aria-live="polite"><i></i>Checking model</div>
+  </div>
+ </div>
+ <p class="model-note">Possibility, illuminated.<br><span>33 ms, one forward pass.</span></p>
+</section>
+<aside class="results-pane" aria-label="Decision results" aria-live="polite">
+ <div class="results-heading">
+  <div><div class="panel-title"><span class="section-num">02</span><h3 id="results-title">Your decisions</h3></div><p>Probabilities, in plain sight.</p></div>
+  <span class="result-count" id="result-count">—</span>
+ </div>
+ <div id="run-status" class="run-status"><span class="status-led"></span>Ready when you are</div>
+ <div id="results">
+  <div class="empty-results">
+   <span class="empty-symbol" aria-hidden="true">✧</span>
+   <h4>Context becomes<br><em>perspective.</em></h4>
+   <p>Run your decisions. Compare every answer<br>and the alternatives behind it.</p>
+   <div class="empty-types"><span><b>C</b> Choose</span><span><b>N</b> Yes / no</span><span><b>S</b> Score</span></div>
+  </div>
+ </div>
+ <div id="timing" hidden></div>
+ <div class="readout-foot">You make the call. Probabilities aren’t guarantees.</div>
+</aside>
+</div>
+<footer>
+ <span>Laya Decision Studio <b>·</b> built on <a href="https://github.com/NandhaKishorM/laya" target="_blank" rel="noopener">laya</a></span>
+ <span>Workbench inspired by the <a href="https://huggingface.co/spaces/llm-semantic-router/decision-studio" target="_blank" rel="noopener">Decision Studio ↗</a></span>
+</footer>
+</main>
+</div>
+<div class="model-popover" id="model-popover" hidden>
+ <div id="model-options" role="listbox" aria-label="Decision models"></div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

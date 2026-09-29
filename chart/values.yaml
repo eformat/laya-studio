@@ -1,0 +1,67 @@
+---
+studio:
+  name: ""
+  # Build with `make image` and push to Quay before installing.
+  image: "quay.io/eformat/laya-decision-studio:latest"
+  imagePullPolicy: Always
+  replicas: 1
+  port: 8080
+
+  # Passthrough environment for the app (LAYA_*), merged with the chart's
+  # own LAYA_DEVICE default: cuda when the GPU is enabled, cpu otherwise.
+  env: {}
+
+  # Optional accelerator. The resource name accepts nvidia.com/gpu or an
+  # MIG slice: nvidia.com/mig-1g.18gb, nvidia.com/mig-2g.35gb,
+  # nvidia.com/mig-3g.71gb.
+  gpu:
+    enabled: false
+    resourceName: nvidia.com/mig-1g.18gb
+    count: 1
+    nodeSelector: {}
+    # Applied automatically when the GPU is enabled, before any extra
+    # tolerations below, so GPU pods schedule onto tainted GPU nodes.
+    defaultTolerations:
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Exists
+    tolerations: []
+    # Added to the pod template when the GPU is enabled: pins the workload
+    # to the unreserved-GPU hardware profile and routes it through Kueue.
+    annotations:
+      opendatahub.io/hardware-profile-name: unreserved-gpu
+      opendatahub.io/hardware-profile-namespace: redhat-ods-applications
+    labels:
+      kueue.x-k8s.io/queue-name: unreserved
+
+  # Three resident checkpoints take ~2-3 GiB of RAM on CPU.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      memory: 4Gi
+
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
+  # OpenShift Route. host is optional: empty lets the cluster default it.
+  route:
+    enabled: true
+    host: ""
+    tls:
+      enabled: true
+      termination: edge
+      insecureEdgeTerminationPolicy: Redirect

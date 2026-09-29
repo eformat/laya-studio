@@ -1,0 +1,11 @@
+# Local environments and caches never enter the build context.
+.venv
+.pytest_cache
+.playwright-cli
+**/__pycache__
+**/*.pyc
+# Charts and docs are not needed inside the image.
+chart
+*.md
+.git
+.gitignore
