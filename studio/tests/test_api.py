@@ -12,6 +12,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
+from prometheus_client import REGISTRY
 
 from studio.app import create_app
 
@@ -375,3 +376,81 @@ def test_security_headers(client):
     assert res.headers["X-Content-Type-Options"] == "nosniff"
     assert res.headers["Referrer-Policy"] == "no-referrer"
     assert res.headers["Cache-Control"] == "no-store"
+
+
+# ------------------------------- metrics -------------------------------
+
+def _sample(name, **labels):
+    value = REGISTRY.get_sample_value(name, labels)
+    return value or 0.0
+
+
+def test_metrics_endpoint_served(client):
+    res = client.get("/metrics")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/plain")
+    assert b"laya_studio_http_requests_total" in res.content
+
+
+def test_metrics_disabled_404(monkeypatch, stub):
+    monkeypatch.setenv("LAYA_PRELOAD", "1")
+    monkeypatch.setenv("LAYA_METRICS", "0")
+    client = TestClient(create_app(router=stub))
+    assert client.get("/metrics").status_code == 404
+
+
+def test_metrics_single_request(client, stub):
+    name = "laya_studio_http_requests_total"
+    requests_before = _sample(name, method="POST", endpoint="/v1/systemone", status="200")
+    tokens_before = _sample("laya_studio_inference_input_tokens_total", checkpoint="english")
+    out_before = _sample("laya_studio_inference_output_tokens_total", checkpoint="english")
+    decisions_before = _sample("laya_studio_decisions_total", checkpoint="english")
+    passes_before = _sample("laya_studio_inference_seconds_count", checkpoint="english")
+
+    assert client.post("/v1/systemone", json=SINGLE_REQUEST).status_code == 200
+
+    assert _sample(name, method="POST", endpoint="/v1/systemone", status="200") == requests_before + 1
+    # The stub's usage: 42 input tokens, 0 output (no generation).
+    assert _sample("laya_studio_inference_input_tokens_total", checkpoint="english") == tokens_before + 42
+    assert _sample("laya_studio_inference_output_tokens_total", checkpoint="english") == out_before
+    assert _sample("laya_studio_decisions_total", checkpoint="english") == decisions_before + 1
+    assert _sample("laya_studio_inference_seconds_count", checkpoint="english") == passes_before + 1
+    # The gate allows one pass at a time; after the response, none are running.
+    assert _sample("laya_studio_inference_in_flight") == 0
+
+
+def test_metrics_batch_tokens_summed(client, stub):
+    decisions_before = _sample("laya_studio_decisions_total", checkpoint="english")
+    tokens_before = _sample("laya_studio_inference_input_tokens_total", checkpoint="english")
+
+    assert client.post("/v1/systemone/batches", json=BATCH_REQUEST).status_code == 200
+
+    # One decision per result, tokens summed across the two states.
+    assert _sample("laya_studio_decisions_total", checkpoint="english") == decisions_before + 2
+    assert _sample("laya_studio_inference_input_tokens_total", checkpoint="english") == tokens_before + 84
+
+
+def test_metrics_error_status_labelled(client):
+    name = "laya_studio_http_requests_total"
+    before = _sample(name, method="POST", endpoint="/v1/systemone", status="422")
+    assert client.post("/v1/systemone", json={"state": "hello"}).status_code == 422
+    assert _sample(name, method="POST", endpoint="/v1/systemone", status="422") == before + 1
+
+
+def test_metrics_endpoint_labels(client):
+    name = "laya_studio_http_requests_total"
+    static_before = _sample(name, method="GET", endpoint="static", status="200")
+    assert client.get("/").status_code == 200
+    assert _sample(name, method="GET", endpoint="static", status="200") == static_before + 1
+
+    unmatched_before = _sample(name, method="GET", endpoint="unmatched", status="404")
+    assert client.get("/api/nope").status_code == 404
+    assert _sample(name, method="GET", endpoint="unmatched", status="404") == unmatched_before + 1
+
+
+def test_metrics_auto_attributed_to_answering_checkpoint(client, stub):
+    # auto -> the stub answers with the english checkpoint, so that is the
+    # label the tokens are counted under, not "auto".
+    tokens_before = _sample("laya_studio_inference_input_tokens_total", checkpoint="english")
+    assert client.post("/v1/systemone", json=SINGLE_REQUEST).status_code == 200
+    assert _sample("laya_studio_inference_input_tokens_total", checkpoint="english") == tokens_before + 42

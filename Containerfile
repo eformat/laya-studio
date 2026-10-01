@@ -1,18 +1,28 @@
 # build
 FROM registry.access.redhat.com/ubi9/python-312:latest AS builder
-# Add application sources and set permissions
+# Dependencies first: only requirements.txt invalidates the install and the
+# ~2-3 GB checkpoint layers below, so app edits rebuild without re-downloading
+# the laya weights.
 USER 0
-ADD . /tmp/src
+COPY requirements.txt /tmp/src/requirements.txt
 RUN /usr/bin/fix-permissions /tmp/src
 USER 1001
 # Install the application dependencies (s2i assemble runs pip install -r requirements.txt)
 RUN /usr/libexec/s2i/assemble
 # Bake the laya checkpoints into the image (modelcar pattern): pods start
 # instantly with no Hugging Face egress and no cache volume. ~2-3 GB on top
-# of the base image.
-RUN /usr/bin/fix-permissions /opt/app-root -P
+# of the base image. Cached until requirements.txt changes.
 ENV HF_HOME=/opt/app-root/hf-cache
 RUN python -c "from laya import Router; Router(preload=True)"
+# Application sources last: a code edit rebuilds from here on only. The copy
+# replicates what s2i assemble does with /tmp/src, minus the already-satisfied
+# pip install.
+USER 0
+ADD . /tmp/src
+RUN /usr/bin/fix-permissions /tmp/src \
+    && cp -Rf /tmp/src/. /opt/app-root/src/ \
+    && /usr/bin/fix-permissions /opt/app-root -P
+USER 1001
 
 # deploy
 FROM registry.access.redhat.com/ubi9/python-312-minimal:latest

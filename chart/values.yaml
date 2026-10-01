@@ -65,3 +65,16 @@ studio:
       enabled: true
       termination: edge
       insecureEdgeTerminationPolicy: Redirect
+
+  # Prometheus metrics. /metrics is served on the app port: the ServiceMonitor
+  # feeds OpenShift user-workload monitoring, the pod annotations are the
+  # fallback for annotation-based (prometheus.io/*) scrapers.
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+      # Extra labels the ServiceMonitor needs, e.g. the release label a
+      # non-empty user-workload serviceMonitorSelector matches on.
+      additionalLabels: {}

@@ -40,7 +40,7 @@ make push                   # podman push
 helm install laya-studio chart/ -n laya-studio --create-namespace
 ```
 
-The chart ships a Deployment, Service, ServiceAccount, and an OpenShift Route (TLS edge). Readiness is `/api/ready` (503 until every checkpoint is resident); liveness is `/api/status`.
+The chart ships a Deployment, Service, ServiceAccount, an OpenShift Route (TLS edge), and a ServiceMonitor that feeds OpenShift user-workload monitoring. Readiness is `/api/ready` (503 until every checkpoint is resident); liveness is `/api/status`.
 
 **GPU / MIG slice:** enable the GPU toggle and pick the resource name — `nvidia.com/gpu` or an MIG slice (`nvidia.com/mig-1g.18gb`, `nvidia.com/mig-2g.35gb`, `nvidia.com/mig-3g.71gb`):
 
@@ -53,6 +53,14 @@ helm install laya-studio chart/ -n laya-studio --create-namespace \
 `LAYA_DEVICE` defaults to `cuda` with the GPU on, `cpu` without; anything set in `studio.env` wins (`--set "studio.env.LAYA_MODELS=english\,multilingual"`).
 
 Other knobs: `studio.replicas`, `studio.resources` (three resident checkpoints take ~2–3 GiB of RAM), `studio.route.host`, `studio.route.enabled=false` for plain Kubernetes (then front the Service with your own Ingress).
+
+**Metrics:** custom Prometheus metrics are served at `/metrics` on the app port — HTTP calls per endpoint/status, request and inference latency histograms, and input/output token + decision counters by checkpoint. Ready-made PromQL: [`METRICS.md`](METRICS.md). The ServiceMonitor scrapes them with user-workload monitoring (annotations `prometheus.io/*` are on the pod as a fallback); if the release namespace isn't already watched, label it:
+
+```bash
+oc label namespace laya-studio openshift.io/cluster-monitoring=true
+```
+
+`studio.metrics.serviceMonitor.enabled=false` drops the ServiceMonitor, `studio.metrics.serviceMonitor.additionalLabels` adds labels a non-empty `serviceMonitorSelector` may require, and `LAYA_METRICS=0` in `studio.env` disables the app's metrics entirely.
 
 ## The workbench
 
@@ -73,6 +81,7 @@ Shared question sets are editable: add a question (`C`hoice / `N`oul / `S`core),
 | `POST /v1/systemone` | one decision: `{"model"?, "state", "questions", "max_len"?, "head_max_len"?}` |
 | `POST /v1/systemone/batches` | batch: `{"model"?, "states": [{"id", "state"}], "questions"}` (up to 1,024 states) |
 | `POST /api/evaluate` | loose endpoint: accepts either shape, dispatches on `states` |
+| `GET /metrics` | Prometheus metrics (`LAYA_METRICS=0` disables) |
 | `GET /docs` under `/api/docs` | OpenAPI |
 
 ```bash

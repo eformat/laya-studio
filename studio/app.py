@@ -8,7 +8,9 @@ Replicates the core of llm-semantic-router's Decision Studio against laya:
   the configured checkpoints are still loading);
 * ``POST /v1/systemone`` · ``POST /v1/systemone/batches`` — single and batch
   decisions over laya's own question schema (``choice`` / ``score`` / ``noul``);
-* ``POST /api/evaluate`` — a loose internal endpoint that accepts either shape.
+* ``POST /api/evaluate`` — a loose internal endpoint that accepts either shape;
+* ``GET /metrics`` — Prometheus exposition for the custom studio metrics
+  (disabled with ``LAYA_METRICS=0``, which answers 404).
 
 One process embeds the Router directly (the studio's native mode). Inference is
 synchronous torch, so it runs on a single-worker threadpool behind an asyncio
@@ -34,9 +36,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from . import metrics
 from .contract import (ContractError, MAX_BODY_BYTES, build_batch_requests,
                        parse_batch, parse_single)
 from .registry import DEFAULT_MODEL, checkpoints, public_models, resolve_model
@@ -47,6 +51,24 @@ _log = logging.getLogger("laya.studio")
 # Admission bound: each request can buffer up to MAX_BODY_BYTES before inference,
 # so without a bound many concurrent near-cap requests would OOM the worker.
 DEFAULT_MAX_CONCURRENT = 16
+
+# Metrics endpoint labels: fixed API paths label themselves, anything else
+# under /api/ or /v1/ is "unmatched" (404s, docs assets), everything the
+# static mount answers is "static" — never raw paths, so label cardinality
+# stays bounded however much is scraped.
+API_ENDPOINTS = frozenset({
+    "/api/status", "/api/ready", "/api/examples", "/api/evaluate",
+    "/api/docs", "/api/openapi.json", "/v1/models",
+    "/v1/systemone", "/v1/systemone/batches", "/metrics",
+})
+
+
+def endpoint_label(path: str) -> str:
+    if path in API_ENDPOINTS:
+        return path
+    if path.startswith(("/api/", "/v1/")):
+        return "unmatched"
+    return "static"
 
 
 def unique_object(pairs):
@@ -195,6 +217,14 @@ def create_app(router: Optional[Any] = None):
             },
         }
 
+    @api.get("/metrics")
+    def prometheus_metrics():
+        """Prometheus exposition. Disabled with LAYA_METRICS=0 (404), so a
+        scraper sees the target vanish instead of a frozen snapshot."""
+        if not metrics.enabled():
+            raise HTTPException(404, "metrics are disabled")
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
     @api.exception_handler(ContractError)
     async def contract_error(request: Request, exc: ContractError):
         return JSONResponse({"detail": exc.message}, status_code=exc.status)
@@ -223,9 +253,13 @@ def create_app(router: Optional[Any] = None):
             async with gate:
                 loop = asyncio.get_running_loop()
                 t0 = time.perf_counter()
-                result = await loop.run_in_executor(
-                    pool, lambda: router.predict(
-                        parsed["state"], parsed["questions"], **kwargs))
+                metrics.inference_started()
+                try:
+                    result = await loop.run_in_executor(
+                        pool, lambda: router.predict(
+                            parsed["state"], parsed["questions"], **kwargs))
+                finally:
+                    metrics.inference_finished()
                 infer_ms = (time.perf_counter() - t0) * 1000.0
         except HTTPException:
             raise
@@ -235,6 +269,7 @@ def create_app(router: Optional[Any] = None):
         except Exception:  # noqa: BLE001 -- never leak paths/weights/OOM text to clients
             _log.exception("inference failed")
             raise HTTPException(status_code=500, detail="inference failed")
+        metrics.record_single(result, infer_ms / 1000.0)
         return JSONResponse(result, headers={
             "Server-Timing": f"inference;dur={infer_ms:.2f}",
             "X-Inference-Time-Ms": f"{infer_ms:.2f}",
@@ -249,8 +284,12 @@ def create_app(router: Optional[Any] = None):
             async with gate:
                 loop = asyncio.get_running_loop()
                 t0 = time.perf_counter()
-                results = await loop.run_in_executor(
-                    pool, lambda: router.predict_batch(requests, **batch_kwargs))
+                metrics.inference_started()
+                try:
+                    results = await loop.run_in_executor(
+                        pool, lambda: router.predict_batch(requests, **batch_kwargs))
+                finally:
+                    metrics.inference_finished()
                 infer_ms = (time.perf_counter() - t0) * 1000.0
         except HTTPException:
             raise
@@ -259,6 +298,7 @@ def create_app(router: Optional[Any] = None):
         except Exception:  # noqa: BLE001
             _log.exception("batch inference failed")
             raise HTTPException(status_code=500, detail="inference failed")
+        metrics.record_batch(results, infer_ms / 1000.0)
         body = {
             "model": parsed["model"],
             "count": len(results),
@@ -326,10 +366,18 @@ def create_app(router: Optional[Any] = None):
 
     @api.middleware("http")
     async def response_headers(request, call_next):
-        response = await call_next(request)
+        started = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            metrics.record_http(request.method, endpoint_label(request.url.path),
+                                500, time.perf_counter() - started)
+            raise
+        metrics.record_http(request.method, endpoint_label(request.url.path),
+                            response.status_code, time.perf_counter() - started)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
-        if request.url.path.startswith(("/api/", "/v1/")):
+        if request.url.path.startswith(("/api/", "/v1/")) or request.url.path == "/metrics":
             response.headers["Cache-Control"] = "no-store"
         return response
 

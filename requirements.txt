@@ -1,3 +1,4 @@
 laya[serve]>=0.3.21
 pytest
 httpx
+prometheus-client>=0.21
